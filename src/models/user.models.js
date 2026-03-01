@@ -1,5 +1,10 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import dotenv from "dotenv";
+
+dotenv.config();
+import crypto from "crypto";
 const userSchema = new mongoose.Schema(
   {
     username: {
@@ -47,20 +52,46 @@ const userSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-userSchema.pre("save" , async function(next){
-    if(!this.isModified("password")){
-        return next();
-    }
-    this.password = await bcrypt.hash(this.password, 10).then((hashedPassword) => {
-        this.password = hashedPassword;
-        next();
-    }).catch((err) => {
-        next(err);
-    });
-})
+userSchema.pre("save", async function () {
+  if (!this.isModified("password")) {
+    return;
+  }
 
-userSchema.methods.isPasswordCorrect = async function(password){
-    return await bcrypt.compare(password, this.password);
-}
+  this.password = await bcrypt.hash(this.password, 10);
+});
 
-export const User = mongoose.model("User", userSchema);
+userSchema.methods.isPasswordCorrect = async function (password) {
+  return await bcrypt.compare(password, this.password);
+};
+
+userSchema.methods.generateAccessToken = function () {
+  return jwt.sign(
+    { userId: this._id, email: this.email, username: this.username },
+    process.env.ACCESS_TOKEN_SECRET,
+    { expiresIn: process.env.ACCESS_TOKEN_EXPIRATION },
+  );
+};
+
+userSchema.methods.generateRefreshToken = function () {
+  return jwt.sign(
+    { userId: this._id, email: this.email, username: this.username },
+    process.env.REFRESH_TOKEN_SECRET,
+    { expiresIn: process.env.REFRESH_TOKEN_EXPIRATION },
+  );
+};
+
+userSchema.methods.generateTemporaryToken = function () {
+  const unHashedToken = crypto.randomBytes(32).toString("hex");
+
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(unHashedToken)
+    .digest("hex");
+  const tokenExpiry = Date.now() + 20 * 60 * 1000; //20 minutes from now
+
+  return { unHashedToken, hashedToken, tokenExpiry };
+};
+
+const User = mongoose.model("User", userSchema);
+
+export default User;
